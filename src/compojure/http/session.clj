@@ -59,9 +59,9 @@
   "Create a response with a session ID."
   [response session-id]
   (when-not (nil? response)
-    (assoc response :headers
-           (merge (:headers response)
-                  (:headers (set-cookie :session-id session-id))))))
+    (merge-response
+      response
+      (set-cookie :session-id session-id))))
 
 (defn with-session
   "Wrap a handler in a session."
