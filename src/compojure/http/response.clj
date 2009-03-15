@@ -26,7 +26,7 @@
   (-> to
     (merge from)
     (assoc :headers (merge (:headers to) (:headers from)))
-    (assoc :body    (str (:body to) (:body from))))) 
+    (assoc :body    (str (:body to) (:body from)))))
 
 (defmulti response-from class)
 
