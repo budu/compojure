@@ -17,9 +17,12 @@
 
 ;; Override these mulitmethods to create your own session storage
 
-(defmulti create-session  (fn [type] type))    ; returns new session id
-(defmulti read-session    (fn [type id] type)) ; returns session ref
-(defmulti destroy-session (fn [type id] type))
+(defn- first-arg [x & _] x)
+
+(defmulti create-session  first-arg) ; [type]    -> id
+(defmulti read-session    first-arg) ; [type id] -> session
+(defmulti write-session   first-arg) ; [type id session]
+(defmulti destroy-session first-arg) ; [type id]
 
 ;; In memory sessions
 
@@ -33,6 +36,10 @@
 
 (defmethod read-session :memory [_ id]
   (@memory-sessions id))
+
+(defmethod write-session :memory [_ id session]
+  (dosync
+    (alter memory-sessions assoc id session)))
 
 (defmethod destroy-session :memory [_ id]
   (dosync
@@ -67,12 +74,18 @@
   "Wrap a handler in a session."
   [handler]
   (fn [request]
-    (let [session-id (get-session-id request)
-          request    (assoc request :session-id session-id)
+    (let [store      *session-store*
+          session-id (get-session-id request)
+          session    (read-session store session-id)
+          request    (assoc request
+                       :session-id session-id
+                       :session    session)
           response   (handler request)]
+      (when (contains? response :session)
+        (write-session store session-id (response :session)))
       (set-session-id response session-id))))
 
-(defn read-request-session
-  "Reads a session map from a request augmented by with-session."
-  [request]
-  (read-session *session-store* (:session-id request)))
+(defn set-session
+  "Return a response map with the session set."
+  [session]
+  {:session session})
