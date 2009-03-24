@@ -11,15 +11,22 @@
 ;; Helper functions for things like redirection, serving files, 404s, etc.
 
 (ns compojure.http.helpers
-  (:use [compojure.str-utils :only (str*)])
-  (:use [clojure.contrib.def :only (defmacro-)])
-  (:import java.io.File)
-  (:import javax.servlet.http.Cookie))
+  (:use compojure.encodings)
+  (:use compojure.str-utils)
+  (:use clojure.contrib.def)
+  (:use clojure.contrib.duck-streams)
+  (:import java.io.File))
+
+(defn set-cookie
+  "Return a Set-Cookie header."
+  [name value]
+  (let [cookie (str (urlencode name) "=" (urlencode value))]
+    {:headers {"Set-Cookie" cookie}}))
 
 (defn redirect-to
   "A shortcut for a '302 Moved' HTTP redirect."
   [location]
-  [302 {"Location" location}])
+  [302 {:headers {"Location" location}}])
  
 (defn page-not-found
   "A shortcut to create a '404 Not Found' HTTP response."
@@ -27,13 +34,13 @@
     (page-not-found "public/404.html"))
   ([filename]
     [404 (File. filename)]))
- 
+
 (defn- find-index-file
   "Search the directory for index.*"
   [dir]
   (first
     (filter
-      #(.startsWith "index." (.toLowerCase (.getName %)))
+      #(.startsWith (.toLowerCase (.getName %)) "index.")
        (.listFiles dir))))
 
 (defn serve-file
@@ -49,19 +56,3 @@
           filepath
         (.isDirectory filepath)
           (find-index-file filepath)))))
-
-(defn new-cookie
-  "Helper function for creating new Cookie objects."
-  [name value & attrs]
-  (let [cookie   (new Cookie (str* name) value)
-        attrs    (apply hash-map attrs)
-        setters  {:comment (memfn setComment comment)
-                  :domain  (memfn setDomain domain)
-                  :max-age (memfn setMaxAge age)
-                  :path    (memfn setPath path)
-                  :secure  (memfn setSecure secure)
-                  :version (memfn setVersion version)}]
-    (doseq [[attr setter] setters]
-      (if-let [value (attrs attr)]
-        (setter cookie value)))
-    cookie))

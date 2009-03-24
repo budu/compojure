@@ -6,14 +6,19 @@
 ;; terms of this license. You must not remove this notice, or any other, from
 ;; this software.
 
-;; compojure.html:
-;; 
-;; Shortcut to include all compojure.http.* namespaces.
+;; compojure.seq-utils
+;;
+;; Utility functions for manipulating maps
 
-(ns compojure.html
-  (:use compojure.ns-utils))
+(ns compojure.map-utils)
 
-(immigrate
-  'compojure.html.gen
-  'compojure.html.page-helpers
-  'compojure.html.form-helpers)
+(defn assoc-vec
+  "Associate a key with a value. If the key already exists in the map, create a
+  vector of values."
+  [map key val]
+  (assoc map key
+    (if-let [cur (map key)]
+      (if (vector? cur)
+        (conj cur val)
+        [cur val])
+      val)))
