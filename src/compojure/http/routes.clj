@@ -121,11 +121,24 @@
         (subvec matches 1)
         []))))
 
-(defn match-method
+(defn match-route-method
   "True if the method from the route matches the method from the request."
   [route-method request-method]
   (or (nil? route-method)
       (= route-method request-method)))
+
+(defn match-form-method
+  "True if the route-method matches a posted forms _method parameter."
+  [route-method request]
+  (and (= (request :request-method) :post)
+       (= (:_method (get-form-params request))
+          (upcase-name route-method))))
+
+(defn match-method
+  "True if this request matches the route-method."
+  [route-method request]
+  (or (match-route-method route-method (request :request-method))
+      (match-form-method route-method request)))
 
 (defn request-url
   "Return the complete URL for the request."
@@ -158,7 +171,7 @@
                  `(compile-matcher ~path))]
    `(fn [request#]
       (and
-        (match-method ~method (request# :request-method))
+        (match-method ~method request#)
         (match-uri ~matcher (get-matcher-uri ~path request#))))))
 
 ;; Functions and macros for generating routing functions. A routing function
@@ -174,6 +187,13 @@
          ~'flash   (:flash   ~'request)]
      ~@body))
 
+(defn assoc-route-params
+  "Associate route parameters with the request map."
+  [request params]
+  (-> request
+    (assoc :route-params params)
+    (assoc :params (merge (:params request) params))))
+
 (defn compile-route
   "Compile a route in the form (method path & body) into a function."
   [method path body]
@@ -182,9 +202,7 @@
        (if-let [route-params# (matcher# request#)]
          (create-response request#
            (with-request-bindings
-             (let [request# (assoc request# :route-params route-params#)
-                   params# (merge (request# :params) route-params#)]
-               (assoc request# :params params#))
+             (assoc-route-params request# route-params#)
              ~@body))))))
 
 (defn routes*

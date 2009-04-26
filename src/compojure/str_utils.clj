@@ -13,8 +13,7 @@
 (ns compojure.str-utils
   (:use clojure.contrib.seq-utils)
   (:use clojure.contrib.str-utils)
-  (:import clojure.lang.Named)
-  (:import java.util.UUID))
+  (:import clojure.lang.Named))
 
 (defn escape
   "Returns a string with each occurance of a character in
@@ -76,7 +75,7 @@
   [re coll]
   (filter (partial re-find re) coll))
 
-(defn gen-uuid
-  "Generate a random UUID."
-  []
-  (str (UUID/randomUUID)))
+(defn upcase-name
+  "Upcase a symbol or keyword's name."
+  [sym]
+  (. (name sym) toUpperCase))

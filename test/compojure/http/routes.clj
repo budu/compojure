@@ -1,6 +1,7 @@
 (ns test.compojure.http.routes
   (:use compojure.http.routes)
-  (:use clojure.contrib.test-is))
+  (:use clojure.contrib.test-is)
+  (:use test.helpers))
 
 (deftest fixed-path
   (are (match-uri (compile-uri-matcher _1) _1)
@@ -100,6 +101,20 @@
         request {:request-method :get, :uri "/foo"}]
     (is (nil? (route request)))))
 
+(deftest route-match-form-method
+  (let [route   (DELETE "/foo" "body")
+        request {:request-method :post,
+                 :uri "/foo",
+                 :content-type "application/x-www-form-urlencoded"
+                 :form-params {:_method "DELETE"}}]
+    (is (= (:status (route request) 200)))))
+
+(deftest route-not-match-form-method
+  (let [route   (DELETE "/foo" "body")
+        request {:request-method :post,
+                 :uri "/foo" }]
+    (is (nil? (route request)))))
+
 (deftest route-keywords
   (let [route (GET "/:foo"
                 (is (= (:route-params request) {:foo "bar"}))
@@ -112,3 +127,17 @@
         rs (routes r1 r2)]
     (is (rs {:uri "/"}) "x")
     (is (rs {:uri "/foo"}) "y")))
+
+(deftest route-params
+  (let [site (routes
+               (GET "/:route"
+                 (is (= (params :route) "yes"))
+                 (is (= (params :query) "yes"))
+                 (is (= (params :form)  "yes"))
+                 (is (request :params) params)
+                 :next))]
+    (site (merge 
+            {:request-method :get
+             :uri "/yes"
+             :query-string "query=yes"}
+            (form-request "form=yes")))))
