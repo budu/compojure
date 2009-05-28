@@ -30,7 +30,7 @@
     (remove blank?
       (re-split separator param-string))))
 
-(defn get-query-params
+(defn parse-query-params
   "Parse parameters from the query string."
   [request]
   (if-let [query (request :query-string)]
@@ -54,7 +54,7 @@
   (if-let [type (:content-type request)]
     (.startsWith type "application/x-www-form-urlencoded")))
 
-(defn get-form-params
+(defn parse-form-params
   "Parse urlencoded form parameters from the request body."
   [request]
   (if (urlencoded-form? request)
@@ -80,8 +80,8 @@
   to the request map: :query-params, :form-params and :params."
   [request]
   (-> request
-    (assoc-func :query-params get-query-params)
-    (assoc-func :form-params  get-form-params)
+    (assoc-func :query-params parse-query-params)
+    (assoc-func :form-params  parse-form-params)
     (assoc-func :params       get-merged-params)))
 
 (defn with-params
@@ -90,7 +90,7 @@
   (fn [request]
     (handler (assoc-params request))))
 
-(defn get-cookies
+(defn parse-cookies
   "Pull out a map of cookies from a request map."
   [request]
   (if-let [cookies (get-in request [:headers "cookie"])]
@@ -99,7 +99,7 @@
 (defn assoc-cookies
   "Associate cookies with a request map."
   [request]
-  (assoc-func request :cookies get-cookies))
+  (assoc-func request :cookies parse-cookies))
 
 (defn with-cookies
   "Decorator that adds cookies to a request map."
