@@ -118,14 +118,21 @@
     (read-session session-data)))
 
 (defn- assoc-request-session
-  "Associate the session with the request."
+  "Associate the session with the request. Destroy current session if
+  it's expired."
   [request]
-  (if-let [session (get-request-session request)]
-    (assoc request
-      :session session)
-    (assoc request
-      :session      (create-session)
-      :new-session? true)))
+  (let [session (get-request-session request)]
+    (if (and session
+             (or (not (contains? session :expiry))
+                 (< (. System currentTimeMillis) (session :expiry))))
+      (assoc request
+        :session session)
+      (do
+        (when session
+          (destroy-session session))
+        (assoc request
+          :session      (create-session)
+          :new-session? true)))))
 
 (defn- assoc-request-flash
   "Associate the session flash with the request and remove it from the
@@ -202,3 +209,15 @@
   "Associate key value pairs with the session flash."
   [& keyvals]
   (alter-session merge {:flash (apply hash-map keyvals)}))
+
+;; Helper function for expiry time
+
+(defn expire-in
+  ([ms]
+    (session-assoc :expiry (+ (. System currentTimeMillis) ms)))
+  ([n scale]
+    (expire-in
+     (cond (= scale :seconds) (* n 1000)
+           (= scale :minutes) (* n 60000)
+           (= scale :hours)   (* n 3600000)
+           (= scale :days)    (* n 86400000)))))
