@@ -230,3 +230,15 @@
   "Associate key value pairs with the session flash."
   [& keyvals]
   (alter-session merge {:flash (apply hash-map keyvals)}))
+
+;; Helper function for expiry time
+
+(defn expire-in
+  ([ms]
+    (session-assoc :expiry (+ (. System currentTimeMillis) ms)))
+  ([n scale]
+    (expire-in
+     (cond (= scale :seconds) (* n 1000)
+           (= scale :minutes) (* n 60000)
+           (= scale :hours)   (* n 3600000)
+           (= scale :days)    (* n 86400000)))))
