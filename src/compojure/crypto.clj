@@ -27,3 +27,15 @@
   "Generate a random UUID."
   []
   (str (UUID/randomUUID)))
+
+(defn strict-seq=
+  "Like = for sequences, but always check every value in a sequence."
+  [x y]
+  (loop [f1 (first x) f2 (first y)
+         n1 (next x)  n2 (next y)
+         a true]
+    (if (or (nil? n1) (nil? n2))
+      (and (= (count x) (count y)) a)
+      (recur (first n1) (first n2)
+             (next n1)  (next  n2)
+             (and (= f1 f2) a)))))
