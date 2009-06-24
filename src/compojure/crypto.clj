@@ -38,11 +38,11 @@
   (loop [f1 (first x) f2 (first y)
          n1 (next x)  n2 (next y)
          a true]
-    (if (or (nil? n1) (nil? n2))
-      (and (= (count x) (count y)) a)
+    (if (and n1 n2)
       (recur (first n1) (first n2)
              (next n1)  (next  n2)
-             (and (= f1 f2) a)))))
+             (and (= f1 f2) a))
+      (and (= (count x) (count y)) a))))
 
 (defn secure-random-bytes
   "Returns a random byte array of the specified size and algorithm.
