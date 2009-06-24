@@ -12,7 +12,8 @@
   (:use clojure.contrib.duck-streams)
   (:import java.net.URLEncoder)
   (:import java.net.URLDecoder)
-  (:import org.apache.commons.codec.binary.Base64))
+  (:import org.apache.commons.codec.binary.Base64)
+  (:import org.apache.commons.codec.binary.Hex))
 
 (defn urlencode
   "Encode a urlencoded string using the default encoding."
@@ -34,11 +35,16 @@
   "Encode a string using base64."
   (base64-encode-bytes (.getBytes unencoded)))
  
+(defn base64-decode-bytes
+  "Decode a string using base64 into an array of bytes."
+  [encoded]
+  (Base64/decodeBase64 (.getBytes encoded)))
+
 (defn base64-decode
   "Decode a string using base64."
   [encoded]
-  (String. (Base64/decodeBase64 (.getBytes encoded))))
-
+  (String. (base64-decode-bytes encoded)))
+  
 (defn marshal
   "Serialize a Clojure object in a base64-encoded string."
   [data]
@@ -48,3 +54,13 @@
   "Unserialize a Clojure object from a base64-encoded string."
   [marshaled]
   (read-string (base64-decode marshaled)))
+
+(defn decode-hex
+  "Converts a string of hex into it's corresponding byte array."
+  [s]
+  (Hex/decodeHex (.toCharArray s)))
+
+(defn encode-hex
+  "Converts a byte array into it's corresponding hex String."
+  [array]
+  (String. (Hex/encodeHex array)))

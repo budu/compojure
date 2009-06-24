@@ -16,47 +16,39 @@
   (:use compojure.crypto)
   (:use clojure.contrib.except))
 
-;; Global session store type
-
-(declare *session-repo*)
-
 ;; Override these mulitmethods to create your own session storage.
 ;; Uses the Compojure repository pattern.
 
-(defn- repository-type
-  [repository]
-  (:type repository repository))
-
 (defmulti create-session
   "Create a new session map. Should not attempt to save the session."
-  (fn [] (repository-type *session-repo*)))
+  (fn [repository] (:type repository)))
 
 (defmulti read-session
   "Read in the session using the supplied data. Usually the data is a key used
   to find the session in a store."
-  (fn [data] (repository-type *session-repo*)))
+  (fn [repository data] (:type repository)))
 
 (defmulti write-session
   "Write a new or existing session to the session store."
-  (fn [session] (repository-type *session-repo*)))
+  (fn [repository session] (:type repository)))
 
 (defmulti destroy-session
   "Remove the session from the session store."
-  (fn [session] (repository-type *session-repo*)))
+  (fn [repository session] (:type repository)))
 
 (defmulti session-cookie
   "Return the session data to be stored in the cookie. This is usually the
   session ID."
-  (fn [new? session] (repository-type *session-repo*)))
+  (fn [repository new? session] (:type repository)))
 
 ;; Default implementations of create-session and set-session-cookie
 
 (defmethod create-session :default
-  []
+  [repository]
   {:id (gen-uuid)})
 
 (defmethod session-cookie :default
-  [new? session]
+  [repository new? session]
   (if new?
     (session :id)))
 
@@ -65,96 +57,119 @@
 (def memory-sessions (ref {}))
 
 (defmethod read-session :memory
-  [id]
+  [repository id]
   (@memory-sessions id))
 
 (defmethod write-session :memory
-  [session]
+  [repository session]
   (dosync
     (alter memory-sessions
       assoc (session :id) session)))
 
 (defmethod destroy-session :memory
-  [session]
+  [repository session]
   (dosync
     (alter memory-sessions
       dissoc (session :id))))
 
 ;; Cookie sessions
-
-(def *default-secret-key* (gen-uuid))   ; Random secret key
+(def *default-encryption*
+  {:algorithm      "AES/CBC/PKCS5Padding"
+   :secret-key     (gen-key "AES" 128)
+   :cbc-params     (gen-iv-param 16)
+   :hash-key       (secure-random-bytes 32)
+   :hash-algorithm "HmacSHA256"})
 
 (defn session-hmac
-  "Calculate a HMAC for a marshalled session"
-  [cookie-data]
-  (let [secret-key (:secret-key *session-repo* *default-secret-key*)]
-    (hmac secret-key "HmacSHA256" cookie-data)))
+  "Calculate a HMAC for a marshalled session.  Uses the :hash-key and
+   :hash-algorithm of the :encryption repository map."
+  [repository cookie-data]
+  (let [encryption-opts (merge *default-encryption*
+                              (:encryption repository))
+        hash-key        (:hash-key encryption-opts)
+        hash-algorithm  (:hash-algorithm encryption-opts)]
+    (hmac hash-key hash-algorithm cookie-data)))
 
-(defmethod create-session :cookie [] {})
+(defn session-crypt
+  "Encrypt or decrypt session data."
+  [repository func session]
+  (let [encryption-opts (merge *default-encryption*
+                               (:encryption repository))
+        key             (:secret-key encryption-opts)
+        algorithm       (:algorithm encryption-opts)
+        params          (:cbc-params encryption-opts)]
+    (func key algorithm params session)))
+
+(defmethod create-session :cookie
+  [repository]
+  {})
 
 (defmethod session-cookie :cookie
-  [new? session]
-  (let [cookie-data (marshal session)]
+  [repository new? session]
+  (let [cookie-data (session-crypt repository encrypt (marshal session))]
     (if (> (count cookie-data) 4000)
       (throwf "Session data exceeds 4K")
-      (str cookie-data "--" (session-hmac cookie-data)))))
+      (str cookie-data "--" (session-hmac repository cookie-data)))))
 
 (defmethod read-session :cookie
-  [data]
+  [repository data]
   (let [[session mac] (.split data "--")]
-    (if (= mac (session-hmac session))
-      (unmarshal session))))
+    (if (= mac (session-hmac repository session))
+      (unmarshal (session-crypt repository decrypt session)))))
 
-; Do nothing for write or destroy
-(defmethod write-session :cookie [session])
-(defmethod destroy-session :cookie [session])
+(defmethod write-session :cookie
+  [repository session])
+
+(defmethod destroy-session :cookie
+  [repository session])
 
 ;; Session middleware
 
-(defn- timestamp-after
-  "Returns the current time plus seconds as milliseconds."
+(defn timestamp-after
+  "Return the current time plus seconds as milliseconds."
   [seconds]
   (+ (* seconds 1000) (System/currentTimeMillis)))
 
-(defn- assoc-expiry
+(defn assoc-expiry
   "Associate an :expires-at key with the session if the session repository
   contains the :expires key."
-  [session]
-  (if-let [expires (:expires *session-repo*)]
+  [repository session]
+  (if-let [expires (:expires repository)]
     (assoc session :expires-at (timestamp-after expires))
     session))
 
-(defn- session-expired?
+(defn session-expired?
   "True if this session's timestamp is in the past."
   [session]
   (if-let [expires-at (:expires-at session)]
     (< expires-at (System/currentTimeMillis))))
 
-(defn- new-request-session
-  "Associates a new session with a request."
-  [request]
+(defn- get-session
+  "Retrieve the session using the 'session' cookie in the request."
+  [repository request]
+  (if-let [session-data (-> request :cookies :compojure-session)]
+    (read-session repository session-data)))
+
+(defn- assoc-new-session
+  "Associate a new session with a request."
+  [repository request]
   (assoc request
-    :session (assoc-expiry (create-session))
+    :session (assoc-expiry repository (create-session repository))
     :new-session? true))
 
-(defn- get-request-session
-  "Retrieve the session using the 'session' cookie in the request."
-  [request]
-  (if-let [session-data (-> request :cookies :compojure-session)]
-    (read-session session-data)))
-
-(defn- assoc-request-session
+(defn assoc-session
   "Associate the session with the request."
-  [request]
-  (if-let [session (get-request-session request)]
+  [request repository]
+  (if-let [session (get-session repository request)]
     (if (session-expired? session)
       (do
-        (destroy-session session)
-        (new-request-session request))
-      (assoc request :session (assoc-expiry session)))
-    (new-request-session request)))
+        (destroy-session repository session)
+        (assoc-new-session repository request))
+      (assoc request :session
+        (assoc-expiry repository session)))
+    (assoc-new-session repository request)))
 
-(defn- assoc-request-flash
+(defn assoc-flash
   "Associate the session flash with the request and remove it from the
   session."
   [request]
@@ -163,46 +178,54 @@
       (assoc :flash   (session :flash {}))
       (assoc :session (dissoc session :flash)))))
 
-(defn- set-session-cookie
+(defn set-session-cookie
   "Set the session cookie on the response if required."
-  [request response session]
+  [repository request response session]
   (let [new?   (:new-session? request)
-        cookie (session-cookie new? session)
-        update (set-cookie :compojure-session cookie, :path "/")]
+        cookie (session-cookie repository new? session)
+        update (set-cookie :compojure-session cookie
+                           :path (repository :path "/"))]
     (if cookie
       (update-response request response update)
       response)))
 
-(defn- save-handler-session
+(defn save-handler-session
   "Save the session for a handler if required."
-  [request response session]
+  [repository request response session]
   (when (and (contains? response :session)
              (nil? (response :session)))
-    (destroy-session session))
+    (destroy-session repository session))
   (when (or (:session response)
-            (contains? *session-repo* :expires)
             (:new-session? request)
-            (not-empty (:flash request)))
-    (write-session session)))
+            (not-empty (:flash request))
+            (contains? repository :expires))
+    (write-session repository session)))
+
+(defn- keyword->repository
+  "If the argument is a keyword, expand it into a repository map."
+  [repository]
+  (if (keyword? repository)
+    {:type repository}
+    repository))
 
 (defn with-session
   "Wrap a handler in a session of the specified type. Session type defaults to
   :memory if not supplied."
   ([handler]
     (with-session handler :memory))
-  ([handler session-repo]
+  ([handler repository]
     (fn [request]
-      (binding [*session-repo* session-repo]
-        (let [request  (-> request assoc-cookies
-                                   assoc-request-session
-                                   assoc-request-flash)
-              response (handler request)
-              session  (or (:session response) (:session request))]
-          (when response
-            (save-handler-session request response session)
-            (set-session-cookie   request response session)))))))
+      (let [repo     (keyword->repository repository)
+            request  (-> request (assoc-cookies)
+                                 (assoc-session repo)
+                                 (assoc-flash))
+            response (handler request)
+            session  (or (:session response) (:session request))]
+        (when response
+          (save-handler-session repo request response session)
+          (set-session-cookie   repo request response session))))))
 
-;; User functions for modifying the session
+;; Useful functions for modifying the session
 
 (defn set-session
   "Return a response map with the session set."
