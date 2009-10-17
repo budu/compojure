@@ -13,7 +13,5 @@
 
 (immigrate
   'compojure.http.helpers
-  'compojure.http.middleware
-  'compojure.http.multipart
   'compojure.http.routes
   'compojure.http.servlet)

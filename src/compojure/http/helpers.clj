@@ -54,12 +54,6 @@
       #(.startsWith (.toLowerCase (.getName %)) "index.")
        (.listFiles dir))))
 
-(defn safe-path?
-  "Is a filepath safe for a particular root?"
-  [root path]
-  (.startsWith (.getCanonicalPath (File. root path))
-               (.getCanonicalPath (File. root))))
-
 (defn serve-file
   "Attempts to serve up a static file from a directory, which defaults to
   './public'. Nil is returned if the file does not exist. If the file is a
@@ -68,9 +62,46 @@
     (serve-file "public" path))
   ([root path]
     (let [filepath (File. root path)]
-      (if (safe-path? root path)
-        (cond 
-          (.isFile filepath)
-            filepath
-          (.isDirectory filepath)
-            (find-index-file filepath))))))
+      (cond
+        (.isFile filepath)
+          filepath
+        (.isDirectory filepath)
+          (find-index-file filepath)))))
+
+(defn header-option
+  "Converts a header option KeyValue into a string."
+  [[k v]]
+  (cond 
+    (true? v) 
+      (name k)
+    (false? v)
+      ""
+    :else
+      (str (name k) "=" v)))
+
+(defn header-options
+  "Converts a map into an HTTP header options string."
+  [m delim]
+  (str-join delim 
+    (filter 
+      #(not (= "" %)) 
+      (map header-option m))))
+
+(defn with-headers
+  "Merges a map of header name and values into the response.
+   Will not overwrite existing headers."
+  [handler headers]
+  (fn [request]
+    (let [response (handler request)
+          merged-headers (merge headers (:headers response))]
+      (assoc response :headers merged-headers))))
+
+(defn with-cache-control
+   "Middleware to set the Cache-Control http header.
+    Map entries with boolean values either write their
+    key's (name) if true, or nothing if false.
+    Example:
+    (... {:max-age 3600 :public false :must-revalidate true})
+    Cache-Control: max-age=3600, must-revalidate"
+   [handler m]
+   (with-headers handler { "Cache-Control" (header-options m ", ") }))

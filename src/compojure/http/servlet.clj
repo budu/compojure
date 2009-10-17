@@ -82,8 +82,7 @@
     (seq? body)
       (with-open [writer (.getWriter response)]
         (doseq [chunk body]
-          (.print writer (str chunk))
-          (.flush writer)))
+          (.print writer (str chunk))))
     (instance? InputStream body)
       (with-open [out (.getOutputStream response)]
         (IOUtils/copy body out)
