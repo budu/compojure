@@ -13,6 +13,7 @@
   (:use compojure.ns-utils))
 
 (immigrate
+  'compojure.adapters
   'compojure.control
   'compojure.html.gen
   'compojure.html.page-helpers
